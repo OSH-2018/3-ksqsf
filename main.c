@@ -2,16 +2,7 @@
 #define FUSE_USE_VERSION 26
 
 #include <fuse.h>
-#include <stdio.h>
 #include "oshfs.h"
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <errno.h>
-#include <sys/time.h>
-#include <sys/xattr.h>
 
 static const struct fuse_operations osh_oper = {
         .init = osh_init,

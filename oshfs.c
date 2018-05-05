@@ -318,6 +318,10 @@ int do_read(const char *path, char *buf, size_t size, off_t offset, int issymlin
 
     if (fe->head == 0)
         return 0;
+    if (issymlink && !S_ISREG(fe->mode))
+        return 0;
+    if (!issymlink && S_ISLNK(fe->mode))
+        return 0;
 
     memset(buf, 0, size);
 
@@ -351,6 +355,7 @@ int do_read(const char *path, char *buf, size_t size, off_t offset, int issymlin
 int osh_read(const char *path, char *buf, size_t size, off_t offset,
              struct fuse_file_info *fi)
 {
+    (void) fi;
     return do_read(path, buf, size, offset, 0);
 }
 
@@ -458,6 +463,7 @@ static int do_write(const char *buf, size_t size, off_t offset, struct file_entr
 int osh_write(const char *path, const char *buf, size_t size, off_t offset,
               struct fuse_file_info *fi)
 {
+    (void) fi;
     printf("%s: %s (size %lu) (off %ld) %s\n", __FUNCTION__, path, size, offset, buf);
 
     struct file_entry *fe = find_file_by_path(path + 1);
@@ -785,6 +791,8 @@ int osh_readlink(const char *path, char *buf, size_t size)
 
 int osh_release(const char *path, struct fuse_file_info *file)
 {
+    (void) path;
+    (void) file;
     return 0;
 }
 
@@ -832,6 +840,7 @@ int osh_mknod(const char *path, mode_t mode, dev_t dev)
 
 int osh_statfs(const char *path, struct statvfs *stbuf)
 {
+    (void) path;
     memcpy(stbuf, &statfs, sizeof(struct statvfs));
     return 0;
 }

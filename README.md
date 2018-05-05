@@ -1,6 +1,6 @@
 # OSHFS
 
-OSHFS is an in-memory filesystem written for FUSE, with absolutely **ZERO** heap allocation.
+OSHFS is an in-memory filesystem written for FUSE, with absolutely **ZERO** heap allocation (except `mmap`).
 
 File operations:
 
