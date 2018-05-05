@@ -161,16 +161,18 @@ int osh_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     (void) offset;
     (void) fi;
 
-    struct file_entry *dir = find_file_by_path(path + 1);
+    struct stat stbuf;
+    struct file_entry *dir = find_file_by_path(path + 1), *pdir;
     if (!dir)
         return -ENOENT;
     else if (dir == NOTDIR)
         return -ENOTDIR;
 
+    filler(buf, ".", NULL, 0);
+    filler(buf, "..", NULL, 0);
     size_t current = dir->child;
     while (current != 0) {
         struct file_entry *fe = (struct file_entry *) blocks[current];
-        struct stat stbuf;
         fill_stat(fe, &stbuf);
         if (filler(buf, fe->filename, &stbuf, 0))
             break;

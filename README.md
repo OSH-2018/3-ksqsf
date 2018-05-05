@@ -15,6 +15,7 @@ Directory operations:
 
 * Create
 * Remove
+* Move (rename)
 
 All of them are random accesses in O(n) time.  Trailing data blocks are automatically merged.
 
