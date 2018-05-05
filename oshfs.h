@@ -51,5 +51,6 @@ int osh_truncate(const char *path, off_t len);
 int osh_fsync(const char *path, int isdatasync, struct fuse_file_info *fi);
 int osh_mkdir(const char *path, mode_t mode);
 int osh_rmdir(const char *path);
+int osh_rename(const char *from, const char *to);
 
 #endif //INC_3_KSQSF_OSHFS_H

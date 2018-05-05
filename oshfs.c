@@ -54,13 +54,21 @@ static size_t find_next(const char *s, char c)
     return i;
 }
 
-static struct file_entry *do_find_file_by_path(const char *pathname, struct file_entry *dir)
+/// Find a path like 'a/b/c' in a directory.
+/// \param pathname 'a/b/c'
+/// \param dir directory
+/// \param prev previous file entry to the found one; NULL for the first child in dir
+/// \return the found file entry
+static struct file_entry *do_find_file_by_path(const char *pathname, struct file_entry *dir,
+                                               struct file_entry **prev, size_t *blk)
 {
     printf("  %s: %s\n", __FUNCTION__, pathname);
 
     if (pathname[0] == 0)
         return dir;
 
+    if (prev)
+        *prev = NULL;
     size_t current = dir->child;
     char fn[256];
 
@@ -74,13 +82,18 @@ static struct file_entry *do_find_file_by_path(const char *pathname, struct file
 
         // Compare and check.
         if (!strcmp(fn, fe->filename))
-            if (pathname[l] == 0)
+            if (pathname[l] == 0) {
+                if (blk)
+                    *blk = current;
                 return fe;
+            }
             else if (fe->mode & S_IFDIR) // Go to next level; current fe must be a directory.
-                return do_find_file_by_path(pathname + l + 1, fe);
+                return do_find_file_by_path(pathname + l + 1, fe, prev, blk);
             else
                 return NOTDIR;
 
+        if (prev)
+            *prev = fe;
         current = fe->next;
     }
     return NULL;
@@ -91,7 +104,7 @@ static struct file_entry *do_find_file_by_path(const char *pathname, struct file
 /// \return The file entry.
 static struct file_entry *find_file_by_path(const char *pathname)
 {
-    return do_find_file_by_path(pathname, root);
+    return do_find_file_by_path(pathname, root, NULL, NULL);
 }
 
 /// Fill stbuf.
@@ -166,6 +179,11 @@ int osh_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     return 0;
 }
 
+/// Get the parent directory (object) of path.
+///
+/// \param path path
+/// \param dir [output] parent directory object
+/// \return index of the beginning of filename part in path
 static size_t parent_dir(const char *path, struct file_entry **dir) {
     char dirpath[4096];
     size_t j = strlen(path) - 1;
@@ -173,7 +191,11 @@ static size_t parent_dir(const char *path, struct file_entry **dir) {
         j--;
     strncpy(dirpath, path, j);
     dirpath[j] = 0;
-    printf("%s: %s -> %s\n", __FUNCTION__, path, dirpath);
+    printf("%s: %s -> %s\n", __FUNCTION__, path, j == 0 ? "(root)" : dirpath);
+    if (j == 0) {
+        *dir = blocks[0];
+        return 1;
+    }
     *dir = find_file_by_path(dirpath + 1);
     if (*dir)
         printf("  Found parent dir: %s\n", (*dir)->filename);
@@ -641,6 +663,47 @@ int osh_mkdir(const char *path, mode_t mode)
 
     // Prepend to dir.
     dir->child = blk;
+
+    return 0;
+}
+
+int osh_rename(const char *from, const char *to)
+{
+    printf("%s: %s -> %s\n", __FUNCTION__, from, to);
+
+    if (!strcmp(from, to))
+        return 0;
+
+    struct file_entry *olddir, *newdir;
+    struct file_entry *fe, *oldprev;
+    size_t i, j;
+    i = parent_dir(from, &olddir);
+    printf("olddir = %s\n", olddir->filename);
+    j = parent_dir(to, &newdir);
+    printf("newdir = %s\n", newdir->filename);
+    size_t mdblk;
+
+    fe = do_find_file_by_path(from + i, olddir, &oldprev, &mdblk);
+
+    printf("Found file %s in directory %s, moving to new directory %s\n", fe->filename, olddir->filename, newdir->filename);
+
+    if (!olddir || !newdir)
+        return -ENOENT;
+    else if (olddir == NOTDIR || newdir == NOTDIR)
+        return -ENOTDIR;
+
+    // Detach old file from the old directory.
+    if (oldprev) {
+        oldprev->next = fe->next;
+    }
+    else {
+        olddir->child = fe->next;
+    }
+
+    // Append new file to the new directory.
+    fe->next = newdir->child;
+    newdir->child = mdblk;
+    strncpy(fe->filename, to + j, 256);
 
     return 0;
 }

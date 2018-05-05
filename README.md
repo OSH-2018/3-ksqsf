@@ -1,6 +1,6 @@
 # OSHFS
 
-OSHFS is an in-memory filesystem written for FUSE.
+OSHFS is an in-memory filesystem written for FUSE, with absolutely **ZERO** heap allocation.
 
 File operations:
 
@@ -9,13 +9,14 @@ File operations:
 * Write
 * Delete
 * Truncate
+* Move (rename)
 
 Directory operations:
 
 * Create
 * Remove
 
-All of them are random accesses in $O(n)$ time.  Trailing blocks are automatically merged.
+All of them are random accesses in O(n) time.  Trailing data blocks are automatically merged.
 
 ## Design
 
