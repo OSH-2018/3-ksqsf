@@ -10,14 +10,11 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-struct superblock {
-    size_t first_entry;
-};
-
 struct file_entry {
     char  filename[256];    // File name
     size_t head;            // Points to the first data block
     size_t next;            // Next file entry
+    size_t child;
     mode_t mode;            // Mode
     size_t size;            // File size
     blkcnt_t blocks;        // blocks
@@ -36,6 +33,8 @@ struct __attribute__((packed)) data_node {
     char body[OSHFS_BLKSIZ - sizeof(size_t)*3];
 };
 
+#define NOTDIR ((struct file_entry *) 1)
+
 void *osh_init(struct fuse_conn_info *ci);
 int osh_getattr(const char *path, struct stat *stbuf);
 int osh_create(const char *path, mode_t mode, struct fuse_file_info *fi);
@@ -50,5 +49,7 @@ int osh_chmod(const char *path, mode_t mode);
 int osh_chown(const char *path, uid_t user, gid_t group);
 int osh_truncate(const char *path, off_t len);
 int osh_fsync(const char *path, int isdatasync, struct fuse_file_info *fi);
+int osh_mkdir(const char *path, mode_t mode);
+int osh_rmdir(const char *path);
 
 #endif //INC_3_KSQSF_OSHFS_H

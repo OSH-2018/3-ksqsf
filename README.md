@@ -10,6 +10,11 @@ File operations:
 * Delete
 * Truncate
 
+Directory operations:
+
+* Create
+* Remove
+
 All of them are random accesses in $O(n)$ time.  Trailing blocks are automatically merged.
 
 ## Design
