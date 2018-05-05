@@ -27,5 +27,4 @@ OSHFS is a simple file system implemented completely in linked lists.
 
 Further improvements to be made in the future?
 
-* Balanced binary tree (or B-tree?) for $O(\log n)$ random accesses.
-* Directory?
+* Advanced data structures (skip list? balanced binary tree? B-tree?) for more efficient random accesses.
