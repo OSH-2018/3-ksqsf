@@ -13,7 +13,7 @@
 #include <sys/time.h>
 #include <sys/xattr.h>
 
-static const struct fuse_operations xmp_oper = {
+static const struct fuse_operations osh_oper = {
         .init = osh_init,
         .getattr = osh_getattr,
         .readdir = osh_readdir,
@@ -31,13 +31,13 @@ static const struct fuse_operations xmp_oper = {
         .mkdir = osh_mkdir,
         .rmdir = osh_rmdir,
         .rename = osh_rename,
-//        .readlink = xmp_readlink,
-//        .mknod = xmp_mknod,
-//        .symlink = xmp_symlink,
-//        .link = xmp_link,
-//        .statfs = xmp_statfs,
-//        .release = xmp_release,
+        .symlink = osh_symlink,
+        .readlink = osh_readlink,
+        .release = osh_release,
+        .mknod = osh_mknod,
+        .statfs = osh_statfs,
 
+//        .link = xmp_link,
 //        .fallocate = xmp_fallocate,
 //        .setxattr = xmp_setxattr,
 //        .getxattr = xmp_getxattr,
@@ -48,5 +48,5 @@ static const struct fuse_operations xmp_oper = {
 int main(int argc, char *argv[])
 {
     umask(0);
-    return fuse_main(argc, argv, &xmp_oper, NULL);
+    return fuse_main(argc, argv, &osh_oper, NULL);
 }

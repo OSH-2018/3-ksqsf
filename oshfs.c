@@ -13,6 +13,7 @@
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)>(b)?(b):(a))
 
+struct statvfs statfs;
 void *blocks[OSHFS_NBLKS];
 struct file_entry *root;
 
@@ -31,6 +32,9 @@ static void *blkalloc()
 {
     printf("    %s\n", __FUNCTION__);
 
+    statfs.f_bfree--;
+    statfs.f_bavail--;
+
     return mmap(NULL, OSHFS_BLKSIZ, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 }
 
@@ -43,6 +47,9 @@ static void blkdrop(size_t n)
     // Reclaim resources.
     munmap(blocks[n], OSHFS_BLKSIZ);
     blocks[n] = NULL;
+
+    statfs.f_bfree++;
+    statfs.f_bavail++;
 }
 
 // s[find_next(s, c)] == c, or s[find_next(s,c)] == 0
@@ -134,11 +141,21 @@ void *osh_init(struct fuse_conn_info *conn)
     root->atime = now;
     root->ctime = now;
     root->mtime = now;
-    root->uid = 0;
-    root->gid = 0;
+    root->uid = getuid();
+    root->gid = getgid();
     root->size = OSHFS_BLKSIZ;
     root->nlink = 1;
     root->child = 0;
+
+    // Prepare filesystem statistics.
+    statfs.f_bsize = OSHFS_BLKSIZ;
+    statfs.f_frsize = OSHFS_FRSIZ;
+    statfs.f_blocks = OSHFS_NBLKS;
+    statfs.f_bfree = OSHFS_NBLKS - 1;  // the first block is preserved by the root file entry.
+    statfs.f_bavail = statfs.f_bfree;
+    statfs.f_files = 0;
+    statfs.f_flag = 0;
+    statfs.f_namemax = 256;
 }
 
 int osh_getattr(const char *path, struct stat *stbuf)
@@ -162,7 +179,7 @@ int osh_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     (void) fi;
 
     struct stat stbuf;
-    struct file_entry *dir = find_file_by_path(path + 1), *pdir;
+    struct file_entry *dir = find_file_by_path(path + 1);
     if (!dir)
         return -ENOENT;
     else if (dir == NOTDIR)
@@ -234,7 +251,7 @@ int osh_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     fe->next = dir->child;
     fe->blocks = 0;
     fe->size = 0;
-    fe->mode = mode;
+    fe->mode = mode & 0777 | S_IFREG;
     fe->uid = getuid();
     fe->gid = getgid();
     fe->nlink = 1;
@@ -291,14 +308,13 @@ int osh_open(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-int osh_read(const char *path, char *buf, size_t size, off_t offset,
-             struct fuse_file_info *fi)
+int do_read(const char *path, char *buf, size_t size, off_t offset, int issymlink)
 {
     printf("%s: %s (size %lu) (offset %ld)\n", __FUNCTION__, path, size, offset);
 
-    struct file_entry *fe = (struct file_entry *) fi->fh;
+    struct file_entry *fe = find_file_by_path(path + 1);
     if (!fe)
-        fe = find_file_by_path(path + 1);
+        return -ENOENT;
 
     if (fe->head == 0)
         return 0;
@@ -323,13 +339,19 @@ int osh_read(const char *path, char *buf, size_t size, off_t offset,
         size_t tx = MAX(A, X), ty = MIN(B, Y);
         memcpy(buf + tx - offset, node->body + tx - A, ty-tx);
 
-next_blk:
+        next_blk:
         curblk = node->next;
     }
 
     clock_gettime(CLOCK_REALTIME, &fe->atime);
 
     return (int) (MIN(offset+size, fe->size) - offset);
+}
+
+int osh_read(const char *path, char *buf, size_t size, off_t offset,
+             struct fuse_file_info *fi)
+{
+    return do_read(path, buf, size, offset, 0);
 }
 
 /// Recursively write into a file.
@@ -438,9 +460,10 @@ int osh_write(const char *path, const char *buf, size_t size, off_t offset,
 {
     printf("%s: %s (size %lu) (off %ld) %s\n", __FUNCTION__, path, size, offset, buf);
 
-    struct file_entry *fe = (struct file_entry *) fi->fh;
+    struct file_entry *fe = find_file_by_path(path + 1);
     if (!fe)
-        fe = find_file_by_path(path + 1);
+        return -ENOENT;
+
     size_t curblk = fe->head;
 
     // Nothing is changed.
@@ -707,5 +730,108 @@ int osh_rename(const char *from, const char *to)
     newdir->child = mdblk;
     strncpy(fe->filename, to + j, 256);
 
+    return 0;
+}
+
+int osh_symlink(const char *target, const char *linkpath)
+{
+    printf("%s: %s -> %s\n", __FUNCTION__, target, linkpath);
+
+    size_t mdblk, j;
+    struct file_entry *fe;
+    struct file_entry *dir;
+    struct timespec now;
+
+    // Find the containing directory
+    j = parent_dir(linkpath, &dir);
+    if (dir == 0)
+        return -ENOENT;
+    else if (dir == NOTDIR)
+        return -ENOTDIR;
+
+    // Find a free block for metadata.
+    mdblk = find_free_block();
+    if (!mdblk)
+        return -ENOSPC;
+    fe = blocks[mdblk] = blkalloc();
+
+    // Metadata.
+    strncpy(fe->filename, linkpath+j, sizeof(fe->filename));
+    fe->head = 0;
+    fe->next = dir->child;
+    fe->blocks = 0;
+    fe->size = strlen(target);
+    fe->mode = 0777 | S_IFLNK;
+    fe->uid = getuid();
+    fe->gid = getgid();
+    fe->nlink = 1;
+    clock_gettime(CLOCK_REALTIME, &now);
+    fe->mtime = now;
+    fe->atime = now;
+    fe->ctime = now;
+    dir->child = mdblk;
+
+    // Write link.
+    do_write(target, strlen(target), 0, fe, 0, fe->head);
+
+    return 0;
+}
+
+int osh_readlink(const char *path, char *buf, size_t size)
+{
+    int res = do_read(path, buf, size, 0, 1);
+    return MIN(res, 0);
+}
+
+int osh_release(const char *path, struct fuse_file_info *file)
+{
+    return 0;
+}
+
+int osh_mknod(const char *path, mode_t mode, dev_t dev)
+{
+    printf("%s: %s\n", __FUNCTION__, path);
+
+    size_t mdblk, j;
+    struct file_entry *fe;
+    struct file_entry *dir;
+    struct timespec now;
+
+    // Find the containing directory
+    j = parent_dir(path, &dir);
+    if (dir == 0)
+        return -ENOENT;
+    else if (dir == NOTDIR)
+        return -ENOTDIR;
+
+    // Find a free block for metadata.
+    mdblk = find_free_block();
+    if (!mdblk)
+        return -ENOSPC;
+    fe = blocks[mdblk] = blkalloc();
+
+    // Metadata.
+    strncpy(fe->filename, path+j, sizeof(fe->filename));
+    fe->head = 0;
+    fe->next = dir->child;
+    fe->blocks = 0;
+    fe->size = 0;
+    fe->mode = mode;
+    fe->dev = dev;
+    fe->uid = getuid();
+    fe->gid = getgid();
+    fe->nlink = 1;
+    clock_gettime(CLOCK_REALTIME, &now);
+    fe->mtime = now;
+    fe->atime = now;
+    fe->ctime = now;
+    dir->child = mdblk;
+
+    return 0;
+}
+
+int osh_statfs(const char *path, struct statvfs *stbuf)
+{
+    memcpy(stbuf, &statfs, sizeof(struct statvfs));
     return 0;
 }

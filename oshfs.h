@@ -21,16 +21,18 @@ struct file_entry {
     uid_t uid;              // user ID of owner
     gid_t gid;              // group ID of owner
     nlink_t nlink;          // Number of hard links
+    dev_t dev;              // Associated device
     struct timespec atime;  // access time
     struct timespec mtime;  // modification time
     struct timespec ctime;  // change time
 };
 
+#define OSHFS_FRSIZ (OSHFS_BLKSIZ - sizeof(size_t)*3)
 struct __attribute__((packed)) data_node {
     size_t next; // points to next data node
     size_t beg;
     size_t len;
-    char body[OSHFS_BLKSIZ - sizeof(size_t)*3];
+    char body[OSHFS_FRSIZ];
 };
 
 #define NOTDIR ((struct file_entry *) 1)
@@ -52,5 +54,10 @@ int osh_fsync(const char *path, int isdatasync, struct fuse_file_info *fi);
 int osh_mkdir(const char *path, mode_t mode);
 int osh_rmdir(const char *path);
 int osh_rename(const char *from, const char *to);
+int osh_symlink(const char *target, const char *linkpath);
+int osh_readlink(const char *path, char *buf, size_t bufsiz);
+int osh_release(const char *path, struct fuse_file_info *file);
+int osh_mknod(const char *path, mode_t mode, dev_t dev);
+int osh_statfs(const char *path, struct statvfs *stbuf);
 
 #endif //INC_3_KSQSF_OSHFS_H

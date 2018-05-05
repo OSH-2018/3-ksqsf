@@ -17,6 +17,12 @@ Directory operations:
 * Remove
 * Move (rename)
 
+Other:
+
+* Device files
+* Statistics (as shown by `df`)
+* Symbolic links
+
 All of them are random accesses in O(n) time.  Trailing data blocks are automatically merged.
 
 ## Design
