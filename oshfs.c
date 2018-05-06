@@ -126,6 +126,7 @@ static void fill_stat(const struct file_entry *fe, struct stat *stbuf)
     stbuf->st_size = fe->size;
     stbuf->st_nlink = fe->nlink;
     stbuf->st_blocks = fe->blocks;
+    stbuf->st_dev = fe->dev;
 }
 
 void *osh_init(struct fuse_conn_info *conn)
