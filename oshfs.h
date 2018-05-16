@@ -13,8 +13,9 @@
 struct file_entry {
     char  filename[256];    // File name
     size_t head;            // Points to the first data block
+    size_t tail;            // Points to the last data block
     size_t next;            // Next file entry
-    size_t child;
+    size_t child;           // First child (only directories)
     mode_t mode;            // Mode
     size_t size;            // File size
     blkcnt_t blocks;        // blocks
@@ -27,9 +28,10 @@ struct file_entry {
     struct timespec ctime;  // change time
 };
 
-#define OSHFS_FRSIZ (OSHFS_BLKSIZ - sizeof(size_t)*3)
+#define OSHFS_FRSIZ (OSHFS_BLKSIZ - sizeof(size_t)*4)
 struct __attribute__((packed)) data_node {
     size_t next; // points to next data node
+    size_t prev; // points to prev data node
     size_t beg;
     size_t len;
     char body[OSHFS_FRSIZ];
