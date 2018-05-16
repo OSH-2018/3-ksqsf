@@ -26,7 +26,7 @@ struct statvfs *statfs;
 size_t first_free;
 size_t next_free[OSHFS_NBLKS];
 
-static size_t find_free_block()
+static size_t take_free_block()
 {
     size_t ret = first_free;
     if (next_free[first_free] == 0)
@@ -264,7 +264,7 @@ int osh_create(const char *path, mode_t mode, struct fuse_file_info *fi)
         return -ENOTDIR;
 
     // Find a free block for metadata.
-    mdblk = find_free_block();
+    mdblk = take_free_block();
     if (!mdblk)
         return -ENOSPC;
     fe = blocks[mdblk] = blkalloc();
@@ -407,7 +407,7 @@ static int do_write(const char *buf, size_t size, off_t offset, struct file_entr
 
         if (X < A) {
             // Append a block before the current one.
-            size_t blk = find_free_block();
+            size_t blk = take_free_block();
             if (blk == 0)
                 return -ENOSPC;
 
@@ -470,7 +470,7 @@ static int do_write(const char *buf, size_t size, off_t offset, struct file_entr
             return 0;
 
         // In case there's something left...
-        size_t blk = find_free_block();
+        size_t blk = take_free_block();
         if (blk == 0)
             return -ENOSPC;
 
@@ -656,15 +656,21 @@ int osh_chown(const char *path, uid_t owner, gid_t group) {
 
 int osh_truncate(const char *path, off_t len)
 {
-    struct file_entry *fe = find_file_by_path(path + 1);
-
     TRACE("%s: %s %ld\n", __FUNCTION__, path, len);
 
+    struct file_entry *fe = find_file_by_path(path + 1);
+    if (!fe)
+        return -ENOENT;
+
     size_t cur = fe->head;
+    printf("file head = %lu\n", cur);
     size_t pblk = 0;
-    struct data_node *node = (struct data_node *) blocks[cur];
+    struct data_node *node;
     while (cur) {
-        if (len <= node->beg) {
+        node = (struct data_node *) blocks[cur];
+
+        if ((size_t) len <= node->beg) {
+            fe->tail = pblk;
             do_drop_data_blocks(cur, fe);
             if (pblk) {
                 struct data_node *prev = (struct data_node *) blocks[pblk];
@@ -675,15 +681,19 @@ int osh_truncate(const char *path, off_t len)
             }
             break;
         }
-        else if (len <= node->beg + node->len) {
+        else if ((size_t) len <= node->beg + node->len) {
             node->len = len - node->beg;
-            if (node->next)
+            if (node->next) {
+                fe->tail = cur;
+                node->next = 0;
                 do_drop_data_blocks(node->next, fe);
+            }
             break;
         }
-
-        cur = node->next;
-        pblk = cur;
+        else {
+            cur = node->next;
+            pblk = cur;
+        }
     }
     fe->size = (size_t) len;
     clock_gettime(CLOCK_REALTIME, &fe->ctime);
@@ -717,7 +727,7 @@ int osh_mkdir(const char *path, mode_t mode)
         return -ENOTDIR;
 
     // Create metadata.
-    size_t blk = find_free_block();
+    size_t blk = take_free_block();
     if (!blk)
         return -ENOSPC;
 
@@ -804,7 +814,7 @@ int osh_symlink(const char *target, const char *linkpath)
         return -ENOTDIR;
 
     // Find a free block for metadata.
-    mdblk = find_free_block();
+    mdblk = take_free_block();
     if (!mdblk)
         return -ENOSPC;
     fe = blocks[mdblk] = blkalloc();
@@ -862,7 +872,7 @@ int osh_mknod(const char *path, mode_t mode, dev_t dev)
         return -ENOTDIR;
 
     // Find a free block for metadata.
-    mdblk = find_free_block();
+    mdblk = take_free_block();
     if (!mdblk)
         return -ENOSPC;
     fe = blocks[mdblk] = blkalloc();
