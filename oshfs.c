@@ -55,6 +55,12 @@ static void blkdrop(size_t n)
 {
     TRACE("    %s %lu\n", __FUNCTION__, n);
 
+    // Be defensive about double free.
+    if (!blocks[n]) {
+        TRACE("** WARNING **: Double free on block %lu!\n", n);
+        return;
+    }
+
     // Reclaim resources.
     munmap(blocks[n], OSHFS_BLKSIZ);
     blocks[n] = NULL;
@@ -177,7 +183,8 @@ void *osh_init(struct fuse_conn_info *conn)
 
     // Set up free list
     first_free = 2;
-    memset(next_free, 0, sizeof(next_free));
+    for (size_t i = 2; i < OSHFS_NBLKS-1; ++i)
+        next_free[i] = i+1;
 
     return 0;
 }
@@ -203,7 +210,13 @@ int osh_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     (void) fi;
 
     struct stat stbuf;
-    struct file_entry *dir = find_file_by_path(path + 1);
+    struct file_entry *dir = NULL;
+
+    if (fi->fh)
+        dir = (struct file_entry *) fi->fh;
+    else
+        dir = find_file_by_path(path + 1);
+
     if (!dir)
         return -ENOENT;
     else if (dir == NOTDIR)
@@ -215,6 +228,7 @@ int osh_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     while (current != 0) {
         struct file_entry *fe = (struct file_entry *) blocks[current];
         fill_stat(fe, &stbuf);
+        printf("Fill %s %d block=%lu\n", fe->filename, fe->filename[0], current);
         if (filler(buf, fe->filename, &stbuf, 0))
             break;
         current = fe->next;
@@ -333,13 +347,9 @@ int osh_open(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-int do_read(const char *path, char *buf, size_t size, off_t offset, int issymlink)
+int do_read(struct file_entry *fe, char *buf, size_t size, off_t offset, int issymlink)
 {
-    TRACE("%s: %s (size %lu) (offset %ld)\n", __FUNCTION__, path, size, offset);
-
-    struct file_entry *fe = find_file_by_path(path + 1);
-    if (!fe)
-        return -ENOENT;
+    TRACE("%s: %s (size %lu) (offset %ld)\n", __FUNCTION__, fe->filename, size, offset);
 
     if (fe->head == 0)
         return 0;
@@ -380,8 +390,16 @@ int do_read(const char *path, char *buf, size_t size, off_t offset, int issymlin
 int osh_read(const char *path, char *buf, size_t size, off_t offset,
              struct fuse_file_info *fi)
 {
-    (void) fi;
-    return do_read(path, buf, size, offset, 0);
+    struct file_entry *fe = NULL;
+
+    if (fi->fh)
+        fe = (struct file_entry *) fi->fh;
+    else
+        fe = find_file_by_path(path);
+    if (!fe)
+        return -ENOENT;
+
+    return do_read(fe, buf, size, offset, 0);
 }
 
 /// Recursively write into a file.
@@ -617,7 +635,6 @@ static int do_remove(const char *path, int rmdir)
 
             fe->next = next->next;
             do_unlink(nblk);
-            blkdrop(nblk);
             return 0;
         }
     }
@@ -738,19 +755,19 @@ int osh_mkdir(const char *path, mode_t mode)
     strncpy(fe->filename, path+j, MAX_FILENAME);
     fe->head = 0;
     fe->tail = 0;
-    fe->next = dir->child;
     fe->child = 0;
-    fe->mode = mode & 0777 | S_IFDIR;
+    fe->mode = (mode & 0777) | S_IFDIR;
     fe->size = OSHFS_BLKSIZ;
     fe->blocks = 1;
-    fe->uid = 0;
-    fe->gid = 0;
+    fe->uid = getuid();
+    fe->gid = getgid();
     fe->nlink = 1;
     fe->atime = now;
     fe->mtime = now;
     fe->ctime = now;
 
     // Prepend to dir.
+    fe->next = dir->child;
     dir->child = blk;
 
     return 0;
@@ -792,6 +809,7 @@ int osh_rename(const char *from, const char *to)
     // Append new file to the new directory.
     fe->next = newdir->child;
     newdir->child = mdblk;
+    printf("New filename should be %s\n", to+j);
     strncpy(fe->filename, to + j, MAX_FILENAME);
 
     return 0;
@@ -844,7 +862,8 @@ int osh_symlink(const char *target, const char *linkpath)
 
 int osh_readlink(const char *path, char *buf, size_t size)
 {
-    int res = do_read(path, buf, size, 0, 1);
+    struct file_entry *fe = find_file_by_path(path);
+    int res = do_read(fe, buf, size, 0, 1);
     return MIN(res, 0);
 }
 
