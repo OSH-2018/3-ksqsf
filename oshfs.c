@@ -272,6 +272,7 @@ int osh_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     // Metadata.
     strncpy(fe->filename, path+j, sizeof(fe->filename));
     fe->head = 0;
+    fe->tail = 0;
     fe->next = dir->child;
     fe->blocks = 0;
     fe->size = 0;
@@ -441,7 +442,7 @@ static int do_write(const char *buf, size_t size, off_t offset, struct file_entr
             return do_write(buf, size, offset, fe, curblk, cur->next);
         }
     }
-    else {
+    else {  // cur == 0
         // We've exceeded the file boundary... Allocate new blocks.
         // N.B. This only happens at the end.
 
@@ -481,17 +482,12 @@ static int do_write(const char *buf, size_t size, off_t offset, struct file_entr
         if (prev) {
             new->next = prev->next;
             prev->next = blk;
-            if (cur) {
-                new->prev = cur->prev;
-                cur->prev = blk;
-            }
+            new->prev = prevblk;
         }
         else {
             new->next = fe->head;
             new->prev = 0;
             fe->head = blk;
-            if (cur)
-                cur->prev = blk;
         }
         fe->tail = blk; // fe->tail should always point to the last block.
 
@@ -510,17 +506,17 @@ int osh_write(const char *path, const char *buf, size_t size, off_t offset,
     if (!fe)
         return -ENOENT;
 
-    size_t curblk = fe->tail;
-
     // Nothing is changed.
-    if (curblk == 0 && size == 0)
+    if (fe->head == 0 && size == 0)
         return 0;
 
     // Locate the appropriate block to start writing.
+    size_t curblk = fe->tail;
     struct data_node *cur = NULL;
     if (fe->tail) {
         cur = blocks[fe->tail];
         while ((size_t) offset < cur->beg) {
+            TRACE(" cur tail = %lu~%lu prev=%lu\n", cur->beg, cur->beg+cur->len, cur->prev);
             if (cur->prev != 0) {
                 curblk = cur->prev;
                 cur = blocks[cur->prev];
@@ -529,6 +525,7 @@ int osh_write(const char *path, const char *buf, size_t size, off_t offset,
                 break;
             }
         }
+        TRACE(" fin tail = %lu~%lu prev=%lu\n", cur->beg, cur->beg+cur->len, cur->prev);
     }
 
     // Do write. Expand the file on demand.
@@ -674,6 +671,7 @@ int osh_truncate(const char *path, off_t len)
                 prev->next = 0;
             } else {
                 fe->head = 0;
+                fe->tail = 0;
             }
             break;
         }
@@ -729,6 +727,7 @@ int osh_mkdir(const char *path, mode_t mode)
 
     strncpy(fe->filename, path+j, MAX_FILENAME);
     fe->head = 0;
+    fe->tail = 0;
     fe->next = dir->child;
     fe->child = 0;
     fe->mode = mode & 0777 | S_IFDIR;
@@ -813,6 +812,7 @@ int osh_symlink(const char *target, const char *linkpath)
     // Metadata.
     strncpy(fe->filename, linkpath+j, sizeof(fe->filename));
     fe->head = 0;
+    fe->tail = 0;
     fe->next = dir->child;
     fe->blocks = 0;
     fe->size = strlen(target);
@@ -870,6 +870,7 @@ int osh_mknod(const char *path, mode_t mode, dev_t dev)
     // Metadata.
     strncpy(fe->filename, path+j, sizeof(fe->filename));
     fe->head = 0;
+    fe->tail = 0;
     fe->next = dir->child;
     fe->blocks = 0;
     fe->size = 0;
