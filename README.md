@@ -60,7 +60,7 @@ unless a new layer of indirection is introduced.
 
 Since the memory space is evenly divided and aligned, it's not so easy
 to make everything flexible and fast, so I can only achieve 20 MiB/s
-in sequential writes.
+in typical sequential writes, and ~350 MiB/s with `dd`.
 
 ## Further improvements
 
