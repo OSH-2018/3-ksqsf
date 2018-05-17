@@ -228,7 +228,6 @@ int osh_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     while (current != 0) {
         struct file_entry *fe = (struct file_entry *) blocks[current];
         fill_stat(fe, &stbuf);
-        printf("Fill %s %d block=%lu\n", fe->filename, fe->filename[0], current);
         if (filler(buf, fe->filename, &stbuf, 0))
             break;
         current = fe->next;
@@ -680,7 +679,6 @@ int osh_truncate(const char *path, off_t len)
         return -ENOENT;
 
     size_t cur = fe->head;
-    printf("file head = %lu\n", cur);
     size_t pblk = 0;
     struct data_node *node;
     while (cur) {
@@ -809,7 +807,7 @@ int osh_rename(const char *from, const char *to)
     // Append new file to the new directory.
     fe->next = newdir->child;
     newdir->child = mdblk;
-    printf("New filename should be %s\n", to+j);
+
     strncpy(fe->filename, to + j, MAX_FILENAME);
 
     return 0;
