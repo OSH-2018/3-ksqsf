@@ -918,6 +918,6 @@ int osh_mknod(const char *path, mode_t mode, dev_t dev)
 int osh_statfs(const char *path, struct statvfs *stbuf)
 {
     (void) path;
-    memcpy(stbuf, &statfs, sizeof(struct statvfs));
+    memcpy(stbuf, statfs, sizeof(struct statvfs));
     return 0;
 }

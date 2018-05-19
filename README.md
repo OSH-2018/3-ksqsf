@@ -45,7 +45,7 @@ in O(1) time.
 ### Read / Write
 
 A file consists of a file entry and a data list.  The file entry
-points to the first and the last data node to accerlate sequential
+points to the first and the last data node to accelerate sequential
 reads and appends.
 
 ### Directory
